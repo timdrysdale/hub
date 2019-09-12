@@ -1,0 +1,125 @@
+package hub
+
+import (
+	"time"
+
+	"github.com/eclesh/welford"
+)
+
+// Hub maintains the set of active clients and broadcasts messages to the
+// clients.
+type Hub struct {
+	// Registered clients.
+	clients map[string]map[*Client]bool
+
+	// Inbound messages from the clients.
+	broadcast chan message
+
+	// Register requests from the clients.
+	register chan *Client
+
+	// Unregister requests from clients.
+	unregister chan *Client
+}
+
+func New() *Hub {
+	return &Hub{
+		broadcast:  make(chan message),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		clients:    make(map[string]map[*Client]bool),
+	}
+}
+
+func (h *Hub) run() {
+	for {
+		select {
+		case client := <-h.register:
+			if _, ok := h.clients[client.topic]; !ok {
+				h.clients[client.topic] = make(map[*Client]bool)
+			}
+			h.clients[client.topic][client] = true
+		case client := <-h.unregister:
+			if _, ok := h.clients[client.topic]; ok {
+				delete(h.clients[client.topic], client)
+				close(client.send)
+			}
+		case message := <-h.broadcast:
+			topic := message.sender.topic
+			for client := range h.clients[topic] {
+				if client.name != message.sender.name {
+					select {
+					case client.send <- message:
+					default:
+						close(client.send)
+						delete(h.clients[topic], client)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Client is a middleperson between the hub and whatever is sending/receiving messages on it
+type Client struct {
+	hub   *Hub
+	send  chan message // for outbound messages to client
+	topic string       // message broadcast scope is restricted to a single topic
+	stats *Stats
+}
+
+type RxTx struct {
+	Tx ReportStats `json:"tx"`
+	Rx ReportStats `json:"rx"`
+}
+
+type ReportStats struct {
+	Last string  `json:"last"` //how many seconds ago...
+	Size float64 `json:"size"`
+	Fps  float64 `json:"fps"`
+}
+
+// Client report omits non-serialisable internal references
+type ClientReport struct {
+	Topic       string `json:"topic"`
+	Broadcaster bool   `json:"broadcaster"`
+	Connected   string `json:"connected"`
+	RemoteAddr  string `json:"remoteAddr"`
+	UserAgent   string `json:"userAgent"`
+	Stats       RxTx   `json:"stats"`
+}
+
+type Stats struct {
+	connectedAt time.Time
+	rx          *Frames
+	tx          *Frames
+}
+
+type Frames struct {
+	last time.Time
+	size *welford.Stats
+	ns   *welford.Stats
+}
+
+// messages will be wrapped in this struct for muxing
+type message struct {
+	sender Client
+	mt     int
+	data   []byte //text data are converted to/from bytes as needed
+}
+
+type summaryStats struct {
+	topic map[string]topicStats
+}
+
+type topicStats struct {
+	audience *welford.Stats
+	size     *welford.Stats
+	rx       map[string]int
+}
+
+type messageStats struct {
+	topic string
+	rx    []string
+	size  int
+}

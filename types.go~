@@ -1,0 +1,87 @@
+package Hub
+
+import (
+	"time"
+
+	"github.com/eclesh/welford"
+)
+
+// Hub maintains the set of active clients and
+// broadcasts messages to the clients.
+// From gorilla/websocket chat
+type Hub struct {
+	// Registered clients.
+	clients map[string]map[*Client]bool
+
+	// Inbound messages from the clients.
+	broadcast chan message
+
+	// Register requests from the clients.
+	register chan *Client
+
+	// Unregister requests from clients.
+	unregister chan *Client
+}
+
+// messages will be wrapped in this struct for muxing
+type message struct {
+	sender Client
+	mt     int
+	data   []byte //text data are converted to/from bytes as needed
+}
+
+// Client is a middleperson between the hub and whatever is sending/receiving messages on it
+type Client struct {
+	hub   *Hub
+	send  chan message // for outbound messages to client
+	topic string       // message broadcast scope is restricted to a single topic
+	stats *Stats
+}
+
+// Stats that we keep internally
+type Stats struct {
+	connectedAt time.Time
+	rx          *Frames
+	tx          *Frames
+}
+
+type Frames struct {
+	last time.Time
+	size *welford.Stats
+	ns   *welford.Stats
+}
+
+// Stats that we report externally
+type ClientReport struct {
+	Topic     string `json:"topic"`
+	Connected string `json:"connected"`
+	Stats     RxTx   `json:"stats"`
+}
+
+type RxTx struct {
+	Tx ReportStats `json:"tx"`
+	Rx ReportStats `json:"rx"`
+}
+
+type ReportStats struct {
+	Last string  `json:"last"` //how many seconds ago...
+	Size float64 `json:"size"`
+	Mps  float64 `json:"mps"` //Messages per second
+}
+
+/* These seem superfluous
+type summaryStats struct {
+	topic map[string]topicStats
+}
+
+type topicStats struct {
+	audience *welford.Stats
+	size     *welford.Stats
+	rx       map[string]int
+}
+
+type messageStats struct {
+	topic string
+	rx    []string
+	size  int
+}*/

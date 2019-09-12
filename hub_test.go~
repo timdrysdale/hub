@@ -1,0 +1,9 @@
+package Hub
+
+import "testing"
+
+func TestInstantiate(t *testing.T) {
+
+	h := New()
+
+}
