@@ -30,7 +30,8 @@ type HubStats struct {
 	Last     time.Time
 	Audience *welford.Stats
 	Bytes    *welford.Stats
-	Mps      *welford.Stats
+	Latency  *welford.Stats
+	Dt       *welford.Stats
 }
 
 // Stats that we report externally
@@ -39,7 +40,8 @@ type HubReport struct {
 	Last     string       `json:"last"`
 	Audience WelfordStats `json:"audience"`
 	Bytes    WelfordStats `json:"bytes"`
-	Mps      WelfordStats `json:"mps"`
+	Latency  WelfordStats `json:"latency"`
+	Dt       WelfordStats `json:"dt"`
 }
 
 type WelfordStats struct {
@@ -78,7 +80,7 @@ type ClientStats struct {
 type Frames struct {
 	Last time.Time
 	Size *welford.Stats
-	Mps  *welford.Stats
+	Dt   *welford.Stats
 }
 
 // Stats that we report externally
@@ -94,9 +96,9 @@ type ClientRxTx struct {
 }
 
 type ChannelStats struct {
-	Last string  `json:"last"` //how many seconds ago...
-	Size float64 `json:"size"`
-	Mps  float64 `json:"mps"` //Messages per second
+	Last  string  `json:"last"` //how many seconds ago...
+	Bytes float64 `json:"bytes"`
+	Dt    float64 `json:"dt"` //Messages per second
 }
 
 /* These seem superfluous
