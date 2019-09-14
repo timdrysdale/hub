@@ -419,7 +419,7 @@ func TestStats(t *testing.T) {
 
 	iterations := 20
 
-	duration := time.Duration(iterations+1)*(20*2)*time.Millisecond + time.Millisecond
+	duration := time.Duration(iterations+2)*(20)*time.Millisecond + time.Millisecond
 
 	go receive(rxCount, ca2, contentA, duration, t)
 	go receive(rxCount, cb2, contentB, duration, t)
