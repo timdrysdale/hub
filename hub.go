@@ -51,6 +51,7 @@ func (h *Hub) Run(closed chan struct{}) {
 					select {
 					case client.Send <- message:
 					default:
+						//TODO something more tolerant here like a goroutine with a longer timeout before deleting?
 						close(client.Send)
 						delete(h.Clients[topic], client)
 					}
