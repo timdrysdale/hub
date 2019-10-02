@@ -1,15 +1,20 @@
 package hub
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
+	"github.com/stretchr/testify/assert"
 	"github.com/timdrysdale/counter"
 )
 
@@ -606,4 +611,85 @@ func compareFloat64(a float64, b float64) int {
 
 	return aa.Cmp(bb)
 
+}
+
+func TestDelayedReceive(t *testing.T) {
+	// This is not a pattern to follow, if you can avoid it, because it
+	// causes additional memory usage in the hub
+	// It is recommended to have your receivers ready before to receive before
+	// registering them
+
+	// hook to let us see what got logged
+	hook := test.NewGlobal()
+	// keep the console tidy, since we know we're throwing an error
+	var ignore bytes.Buffer
+	logignore := bufio.NewWriter(&ignore)
+	log.SetOutput(logignore)
+	defer log.SetOutput(os.Stdout) //return logger to stdout for any following tests
+
+	h := New()
+	closed := make(chan struct{})
+	go h.Run(closed)
+
+	topicA := "/videoA"
+	c1 := &Client{Hub: h, Name: "1", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
+	c2 := &Client{Hub: h, Name: "2", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
+
+	topicB := "/videoB"
+	c3 := &Client{Hub: h, Name: "2", Topic: topicB, Send: make(chan Message), Stats: NewClientStats()}
+
+	h.Register <- c1
+	h.Register <- c2
+	h.Register <- c3
+
+	content := []byte{'t', 'e', 's', 't'}
+
+	m := &Message{Data: content, Sender: *c1, Sent: time.Now(), Type: 0}
+
+	var start time.Time
+
+	rxCount := 0
+
+	time.Sleep(time.Millisecond)
+
+	start = time.Now()
+
+	h.Broadcast <- *m
+
+	time.Sleep(200 * time.Millisecond)
+
+	timer := time.NewTimer(5 * time.Millisecond)
+COLLECT:
+	for {
+		select {
+		case <-c1.Send:
+			t.Error("Sender received echo")
+		case msg := <-c2.Send:
+			elapsed := time.Since(start)
+			if elapsed < (150 * time.Millisecond) {
+				t.Error("Message received sooner than expected, check test setup, ", elapsed)
+			}
+			rxCount++
+			if bytes.Compare(msg.Data, content) != 0 {
+				t.Error("Wrong data in message")
+			}
+		case <-c3.Send:
+			t.Error("Wrong client received message")
+		case <-timer.C:
+			break COLLECT
+		}
+	}
+
+	if rxCount != 1 {
+		t.Error("Receiver did not receive message in correct quantity, wanted 1 got ", rxCount)
+	}
+
+	assert.Equal(t, 1, len(hook.Entries))
+	assert.Equal(t, log.WarnLevel, hook.LastEntry().Level)
+	assert.Equal(t, "Hub Message Send Delayed", hook.LastEntry().Message)
+
+	hook.Reset()
+	assert.Nil(t, hook.LastEntry())
+
+	close(closed)
 }

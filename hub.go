@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/eclesh/welford"
+	log "github.com/sirupsen/logrus"
 )
 
 func New() *Hub {
@@ -51,9 +52,19 @@ func (h *Hub) Run(closed chan struct{}) {
 					select {
 					case client.Send <- message:
 					default:
-						//TODO something more tolerant here like a goroutine with a longer timeout before deleting?
-						close(client.Send)
-						delete(h.Clients[topic], client)
+						// try again, but if it fails to send within one second, delete the client
+						go func() {
+							start := time.Now()
+							select {
+							case client.Send <- message:
+								//warn about the delay as this ideally should not happen
+								log.WithFields(log.Fields{"client": client, "topic": topic, "delay": time.Since(start)}).Warn("Hub Message Send Delayed")
+							case <-time.After(time.Second): //TODO make timeout configurable
+								log.WithFields(log.Fields{"client": client, "topic": topic}).Error("Hub Message Send Timed Out")
+								close(client.Send)
+								delete(h.Clients[topic], client)
+							}
+						}()
 					}
 				}
 			}
@@ -103,8 +114,18 @@ func (h *Hub) RunWithStats(closed chan struct{}) {
 						client.Stats.Rx.Last = time.Now()
 						client.Stats.Rx.Size.Add(byteCount)
 					default:
-						close(client.Send)
-						delete(h.Clients[topic], client)
+						go func() {
+							start := time.Now()
+							select {
+							case client.Send <- message:
+								//warn about the delay as this ideally should not happen
+								log.WithFields(log.Fields{"client": client, "topic": topic, "delay": time.Since(start)}).Warn("Hub Message Send Delayed")
+							case <-time.After(time.Second): //TODO make timeout configurable
+								log.WithFields(log.Fields{"client": client, "topic": topic}).Error("Hub Message Send Timed Out")
+								close(client.Send)
+								delete(h.Clients[topic], client)
+							}
+						}()
 					}
 				} else {
 					//update client TX statistics
