@@ -91,29 +91,38 @@ func TestRegisterClient(t *testing.T) {
 
 func TestUnRegisterClient(t *testing.T) {
 
-	topic := "/video0"
-	h := New()
-	closed := make(chan struct{})
-	go h.Run(closed)
-	c := &Client{Hub: h, Name: "aa", Topic: topic, Send: make(chan Message), Stats: NewClientStats()}
+	for i := 0; i < 2; i++ {
 
-	h.Register <- c
-
-	if val, ok := h.Clients[topic][c]; !ok {
-		t.Error("Client not registered in topic")
-	} else if val == false {
-		t.Error("Client registered but not made true in map")
-	}
-
-	time.Sleep(time.Millisecond)
-	h.Unregister <- c
-	time.Sleep(time.Millisecond)
-	if val, ok := h.Clients[topic][c]; ok {
-		if val {
-			t.Error("Client still registered")
+		h := New()
+		closed := make(chan struct{})
+		if i == 0 {
+			go h.Run(closed)
+		} else {
+			go h.RunWithStats(closed)
 		}
+
+		topic := "/video0"
+
+		c := &Client{Hub: h, Name: "aa", Topic: topic, Send: make(chan Message), Stats: NewClientStats()}
+
+		h.Register <- c
+
+		if val, ok := h.Clients[topic][c]; !ok {
+			t.Error("Client not registered in topic")
+		} else if val == false {
+			t.Error("Client registered but not made true in map")
+		}
+
+		time.Sleep(time.Millisecond)
+		h.Unregister <- c
+		time.Sleep(time.Millisecond)
+		if val, ok := h.Clients[topic][c]; ok {
+			if val {
+				t.Error("Client still registered")
+			}
+		}
+		close(closed)
 	}
-	close(closed)
 }
 
 func TestSendMessage(t *testing.T) {
@@ -627,69 +636,105 @@ func TestDelayedReceive(t *testing.T) {
 	log.SetOutput(logignore)
 	defer log.SetOutput(os.Stdout) //return logger to stdout for any following tests
 
-	h := New()
-	closed := make(chan struct{})
-	go h.Run(closed)
+	for i := 0; i < 2; i++ {
 
-	topicA := "/videoA"
-	c1 := &Client{Hub: h, Name: "1", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
-	c2 := &Client{Hub: h, Name: "2", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
-
-	topicB := "/videoB"
-	c3 := &Client{Hub: h, Name: "2", Topic: topicB, Send: make(chan Message), Stats: NewClientStats()}
-
-	h.Register <- c1
-	h.Register <- c2
-	h.Register <- c3
-
-	content := []byte{'t', 'e', 's', 't'}
-
-	m := &Message{Data: content, Sender: *c1, Sent: time.Now(), Type: 0}
-
-	var start time.Time
-
-	rxCount := 0
-
-	time.Sleep(time.Millisecond)
-
-	start = time.Now()
-
-	h.Broadcast <- *m
-
-	time.Sleep(200 * time.Millisecond)
-
-	timer := time.NewTimer(5 * time.Millisecond)
-COLLECT:
-	for {
-		select {
-		case <-c1.Send:
-			t.Error("Sender received echo")
-		case msg := <-c2.Send:
-			elapsed := time.Since(start)
-			if elapsed < (150 * time.Millisecond) {
-				t.Error("Message received sooner than expected, check test setup, ", elapsed)
-			}
-			rxCount++
-			if bytes.Compare(msg.Data, content) != 0 {
-				t.Error("Wrong data in message")
-			}
-		case <-c3.Send:
-			t.Error("Wrong client received message")
-		case <-timer.C:
-			break COLLECT
+		h := New()
+		closed := make(chan struct{})
+		if i == 0 {
+			go h.Run(closed)
+		} else {
+			go h.RunWithStats(closed)
 		}
+
+		topicA := "/videoA"
+		c1 := &Client{Hub: h, Name: "1", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
+		c2 := &Client{Hub: h, Name: "2", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
+
+		h.Register <- c1
+		h.Register <- c2
+
+		content := []byte{'t', 'e', 's', 't'}
+
+		m := &Message{Data: content, Sender: *c1, Sent: time.Now(), Type: 0}
+
+		var start time.Time
+
+		rxCount := 0
+
+		time.Sleep(time.Millisecond)
+
+		start = time.Now()
+
+		h.Broadcast <- *m
+
+		time.Sleep(200 * time.Millisecond)
+
+		timer := time.NewTimer(5 * time.Millisecond)
+	COLLECT:
+		for {
+			select {
+			case msg := <-c2.Send:
+				elapsed := time.Since(start)
+				if elapsed < (150 * time.Millisecond) {
+					t.Error("Message received sooner than expected, check test setup, ", elapsed)
+				}
+				rxCount++
+				if bytes.Compare(msg.Data, content) != 0 {
+					t.Error("Wrong data in message")
+				}
+			case <-timer.C:
+				break COLLECT
+			}
+		}
+
+		if rxCount != 1 {
+			t.Error("Receiver did not receive message in correct quantity, wanted 1 got ", rxCount)
+		}
+
+		assert.Equal(t, 1, len(hook.Entries))
+		assert.Equal(t, log.WarnLevel, hook.LastEntry().Level)
+		assert.Equal(t, "Hub Message Send Delayed", hook.LastEntry().Message)
+
+		hook.Reset()
+		assert.Nil(t, hook.LastEntry())
+		start = time.Now()
+
+		h.Broadcast <- *m
+
+		time.Sleep(1100 * time.Millisecond)
+
+		rxCount = 0
+
+		timer = time.NewTimer(5 * time.Millisecond)
+	COLLECT2:
+		for {
+			select {
+			case msg, _ := <-c2.Send:
+				elapsed := time.Since(start)
+				if elapsed < (750 * time.Millisecond) {
+					t.Error("Message received sooner than expected, check test setup, ", elapsed)
+				}
+				rxCount++
+				if len(msg.Data) != 0 {
+					t.Errorf("Should have got empty message because channel closed")
+				}
+				break COLLECT2
+			case <-timer.C:
+				break COLLECT2
+			}
+		}
+
+		if rxCount > 1 {
+			t.Error("Receiver read from channel too many times, wanted 0 or 1 got ", rxCount)
+		}
+
+		assert.Equal(t, 1, len(hook.Entries))
+		assert.Equal(t, log.ErrorLevel, hook.LastEntry().Level)
+		assert.Equal(t, "Hub Message Send Timed Out", hook.LastEntry().Message)
+
+		hook.Reset()
+		assert.Nil(t, hook.LastEntry())
+
+		close(closed)
 	}
-
-	if rxCount != 1 {
-		t.Error("Receiver did not receive message in correct quantity, wanted 1 got ", rxCount)
-	}
-
-	assert.Equal(t, 1, len(hook.Entries))
-	assert.Equal(t, log.WarnLevel, hook.LastEntry().Level)
-	assert.Equal(t, "Hub Message Send Delayed", hook.LastEntry().Message)
-
-	hook.Reset()
-	assert.Nil(t, hook.LastEntry())
-
-	close(closed)
 }

@@ -1,0 +1,16 @@
+package cmd
+
+
+func TestMpsFromNs(t *testing.T) {
+
+	if MpsFromNs(1e9) < 0.9999 !!  MpsFromNs(1e9) > 1.0001 !!{
+		t.Error("Calculation wrong")
+	}
+
+
+}
+
+
+func MpsFromNs(ns float64) float64 {
+	return 1 / (ns * 1e-9)
+}
