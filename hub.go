@@ -52,26 +52,8 @@ func (h *Hub) Run(closed chan struct{}) {
 					select {
 					case client.Send <- message:
 					default:
-						// try again, but if it fails to send within one second, delete the client
-						go func() {
-							start := time.Now()
-							select {
-							case client.Send <- message:
-								//warn about the delay as this ideally should not happen
-								log.WithFields(log.Fields{"client": client, "topic": topic, "delay": time.Since(start)}).Warn("Hub Message Send Delayed")
-							case <-time.After(time.Second): //TODO make timeout configurable
-								log.WithFields(log.Fields{"client": client, "topic": topic}).Error("Hub Message Send Timed Out")
-								//close(client.Send)
-								select {
-								case <-closed:
-									//channel probably already closed if we have been shutdown
-								default:
-									close(client.Send)
-								}
-								delete(h.Clients[topic], client)
-							case <-closed:
-							}
-						}()
+						log.WithField("client", client).Error("Unregistering unresponsive client")
+						h.Unregister <- client
 					}
 				}
 			}
@@ -121,25 +103,8 @@ func (h *Hub) RunWithStats(closed chan struct{}) {
 						client.Stats.Rx.Last = time.Now()
 						client.Stats.Rx.Size.Add(byteCount)
 					default:
-						go func() {
-							start := time.Now()
-							select {
-							case client.Send <- message:
-								//warn about the delay as this ideally should not happen
-								log.WithFields(log.Fields{"client": client, "topic": topic, "delay": time.Since(start)}).Warn("Hub Message Send Delayed")
-							case <-time.After(time.Second): //TODO make timeout configurable
-								log.WithFields(log.Fields{"client": client, "topic": topic}).Error("Hub Message Send Timed Out")
-								select {
-								case <-closed:
-									//channel probably already closed if we have been shutdown
-								default:
-									close(client.Send)
-								}
-
-								delete(h.Clients[topic], client)
-							case <-closed:
-							}
-						}()
+						log.WithField("client", client).Error("Unregistering unresponsive client")
+						h.Unregister <- client
 					}
 				} else {
 					//update client TX statistics

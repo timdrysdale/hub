@@ -623,10 +623,7 @@ func compareFloat64(a float64, b float64) int {
 }
 
 func TestDelayedReceive(t *testing.T) {
-	// This is not a pattern to follow, if you can avoid it, because it
-	// causes additional memory usage in the hub
-	// It is recommended to have your receivers ready before to receive before
-	// registering them
+	//check that buffered channels will survive until the buffer gets full
 
 	// hook to let us see what got logged
 	hook := test.NewGlobal()
@@ -647,8 +644,8 @@ func TestDelayedReceive(t *testing.T) {
 		}
 
 		topicA := "/videoA"
-		c1 := &Client{Hub: h, Name: "1", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
-		c2 := &Client{Hub: h, Name: "2", Topic: topicA, Send: make(chan Message), Stats: NewClientStats()}
+		c1 := &Client{Hub: h, Name: "1", Topic: topicA, Send: make(chan Message, 1), Stats: NewClientStats()}
+		c2 := &Client{Hub: h, Name: "2", Topic: topicA, Send: make(chan Message, 1), Stats: NewClientStats()}
 
 		h.Register <- c1
 		h.Register <- c2
@@ -667,7 +664,7 @@ func TestDelayedReceive(t *testing.T) {
 
 		h.Broadcast <- *m
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		timer := time.NewTimer(5 * time.Millisecond)
 	COLLECT:
@@ -675,7 +672,7 @@ func TestDelayedReceive(t *testing.T) {
 			select {
 			case msg := <-c2.Send:
 				elapsed := time.Since(start)
-				if elapsed < (150 * time.Millisecond) {
+				if elapsed < (50 * time.Millisecond) {
 					t.Error("Message received sooner than expected, check test setup, ", elapsed)
 				}
 				rxCount++
@@ -691,17 +688,10 @@ func TestDelayedReceive(t *testing.T) {
 			t.Error("Receiver did not receive message in correct quantity, wanted 1 got ", rxCount)
 		}
 
-		assert.Equal(t, 1, len(hook.Entries))
-		assert.Equal(t, log.WarnLevel, hook.LastEntry().Level)
-		assert.Equal(t, "Hub Message Send Delayed", hook.LastEntry().Message)
-
-		hook.Reset()
-		assert.Nil(t, hook.LastEntry())
-		start = time.Now()
-
+		h.Broadcast <- *m
 		h.Broadcast <- *m
 
-		time.Sleep(1100 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 
 		rxCount = 0
 
@@ -709,15 +699,12 @@ func TestDelayedReceive(t *testing.T) {
 	COLLECT2:
 		for {
 			select {
-			case msg, _ := <-c2.Send:
+			case <-c2.Send:
 				elapsed := time.Since(start)
-				if elapsed < (750 * time.Millisecond) {
+				if elapsed < (50 * time.Millisecond) {
 					t.Error("Message received sooner than expected, check test setup, ", elapsed)
 				}
 				rxCount++
-				if len(msg.Data) != 0 {
-					t.Errorf("Should have got empty message because channel closed")
-				}
 				break COLLECT2
 			case <-timer.C:
 				break COLLECT2
@@ -730,11 +717,12 @@ func TestDelayedReceive(t *testing.T) {
 
 		assert.Equal(t, 1, len(hook.Entries))
 		assert.Equal(t, log.ErrorLevel, hook.LastEntry().Level)
-		assert.Equal(t, "Hub Message Send Timed Out", hook.LastEntry().Message)
+		assert.Equal(t, "Unregistering unresponsive client", hook.LastEntry().Message)
 
 		hook.Reset()
 		assert.Nil(t, hook.LastEntry())
 
 		close(closed)
 	}
+
 }

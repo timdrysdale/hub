@@ -68,6 +68,7 @@ type Client struct {
 	Send  chan Message // for outbound messages to client
 	Stats *ClientStats
 	Topic string // message broadcast scope is restricted to a single topic
+	Done  chan struct{}
 }
 
 // Stats that we keep internally
