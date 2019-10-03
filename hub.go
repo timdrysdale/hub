@@ -61,8 +61,15 @@ func (h *Hub) Run(closed chan struct{}) {
 								log.WithFields(log.Fields{"client": client, "topic": topic, "delay": time.Since(start)}).Warn("Hub Message Send Delayed")
 							case <-time.After(time.Second): //TODO make timeout configurable
 								log.WithFields(log.Fields{"client": client, "topic": topic}).Error("Hub Message Send Timed Out")
-								close(client.Send)
+								//close(client.Send)
+								select {
+								case <-closed:
+									//channel probably already closed if we have been shutdown
+								default:
+									close(client.Send)
+								}
 								delete(h.Clients[topic], client)
+							case <-closed:
 							}
 						}()
 					}
@@ -122,8 +129,15 @@ func (h *Hub) RunWithStats(closed chan struct{}) {
 								log.WithFields(log.Fields{"client": client, "topic": topic, "delay": time.Since(start)}).Warn("Hub Message Send Delayed")
 							case <-time.After(time.Second): //TODO make timeout configurable
 								log.WithFields(log.Fields{"client": client, "topic": topic}).Error("Hub Message Send Timed Out")
-								close(client.Send)
+								select {
+								case <-closed:
+									//channel probably already closed if we have been shutdown
+								default:
+									close(client.Send)
+								}
+
 								delete(h.Clients[topic], client)
+							case <-closed:
 							}
 						}()
 					}
