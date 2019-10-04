@@ -622,7 +622,7 @@ func compareFloat64(a float64, b float64) int {
 
 }
 
-func TestDelayedReceive(t *testing.T) {
+func testDelayedReceive(t *testing.T) {
 	//check that buffered channels will survive until the buffer gets full
 
 	// hook to let us see what got logged

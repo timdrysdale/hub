@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/eclesh/welford"
-	log "github.com/sirupsen/logrus"
 )
 
 func New() *Hub {
@@ -52,8 +51,7 @@ func (h *Hub) Run(closed chan struct{}) {
 					select {
 					case client.Send <- message:
 					default:
-						log.WithField("client", client).Error("Unregistering unresponsive client")
-						h.Unregister <- client
+						//ignore log.WithField("client", client).Error("Unregistering unresponsive client")
 					}
 				}
 			}
@@ -103,8 +101,9 @@ func (h *Hub) RunWithStats(closed chan struct{}) {
 						client.Stats.Rx.Last = time.Now()
 						client.Stats.Rx.Size.Add(byteCount)
 					default:
-						log.WithField("client", client).Error("Unregistering unresponsive client")
-						h.Unregister <- client
+						//ignore
+						//log.WithField("client", client).Error("Unregistering unresponsive client")
+						//go func() { h.Unregister <- client }()
 					}
 				} else {
 					//update client TX statistics
