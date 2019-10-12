@@ -42,7 +42,7 @@ func (h *Hub) Run(closed chan struct{}) {
 		case client := <-h.Unregister:
 			if _, ok := h.Clients[client.Topic]; ok {
 				delete(h.Clients[client.Topic], client)
-				close(client.Send)
+				//client knows it is finished, so no need to close(client.Send)
 			}
 		case message := <-h.Broadcast:
 			topic := message.Sender.Topic
@@ -72,7 +72,7 @@ func (h *Hub) RunWithStats(closed chan struct{}) {
 		case client := <-h.Unregister:
 			if _, ok := h.Clients[client.Topic]; ok {
 				delete(h.Clients[client.Topic], client)
-				close(client.Send)
+				//client knows it is finished, so no need to close(client.Send)
 			}
 		case message := <-h.Broadcast:
 
